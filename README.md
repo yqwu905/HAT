@@ -96,8 +96,13 @@ python hat/test.py -opt options/test/HAT_SRx4_ImageNet-pretrain.yml
 The testing results will be saved in the `./results` folder.  
 
 - Refer to `./options/test/HAT_SRx4_ImageNet-LR.yml` for **inference** without the ground truth image.
+- For multi-GPU inference, keep using the same test option files and launch the dedicated inference entry with PyTorch distributed. For example:
+```
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port=4321 hat/inference.py -opt options/test/HAT_SRx4_ImageNet-LR.yml --launcher pytorch
+```
+Each rank processes a non-overlapping shard of every test dataset and writes results to the same `./results/<experiment>/visualization/<dataset>` layout as `hat/test.py`.
 
-**Note that the tile mode is also provided for limited GPU memory when testing. You can modify the specific settings of the tile mode in your custom testing option by referring to `./options/test/HAT_tile_example.yml`.**
+**Note that the tile mode is also provided for limited GPU memory when testing or inference. You can modify the specific settings of the tile mode in your custom testing option by referring to `./options/test/HAT_tile_example.yml`.**
 
 ## How To Train
 - Refer to `./options/train` for the configuration file of the model to train.
