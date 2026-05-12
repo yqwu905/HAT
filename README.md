@@ -100,7 +100,10 @@ The testing results will be saved in the `./results` folder.
 ```
 CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 --master_port=4321 hat/inference.py -opt options/test/HAT_SRx4_ImageNet-LR.yml --launcher pytorch
 ```
-Each rank processes a non-overlapping shard of every test dataset and writes results to the same `./results/<experiment>/visualization/<dataset>` layout as `hat/test.py`.
+Each rank processes a non-overlapping shard of every test dataset and writes results to the same `./results/<experiment>/visualization/<dataset>` layout as `hat/test.py`. Add `-o <output_dir>` (or `--output <output_dir>`) to use a custom visualization output root, and add `--skip-existing` to skip images whose target output file already exists. For example:
+```
+python hat/inference.py -opt options/test/HAT_SRx4_ImageNet-LR.yml -o outputs/HAT_SRx4 --skip-existing
+```
 
 **Note that the tile mode is also provided for limited GPU memory when testing or inference. You can modify the specific settings of the tile mode in your custom testing option by referring to `./options/test/HAT_tile_example.yml`.**
 

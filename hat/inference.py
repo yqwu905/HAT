@@ -1,6 +1,8 @@
 # flake8: noqa
+import argparse
 import logging
 import os.path as osp
+import sys
 
 import torch
 import torch.distributed as dist
@@ -46,20 +48,21 @@ def _run_model_inference(model):
         model.test()
 
 
+def _get_save_image_path(model, dataset_name, img_name, current_iter):
+    if model.opt['is_train']:
+        return osp.join(model.opt['path']['visualization'], img_name, f'{img_name}_{current_iter}.png')
+
+    suffix = model.opt['val'].get('suffix')
+    if suffix:
+        return osp.join(model.opt['path']['visualization'], dataset_name, f'{img_name}_{suffix}.png')
+    return osp.join(model.opt['path']['visualization'], dataset_name, f'{img_name}_{model.opt["name"]}.png')
+
+
 def _save_image(model, dataset_name, img_name, sr_img, current_iter, save_img):
     if not save_img:
         return
 
-    if model.opt['is_train']:
-        save_img_path = osp.join(model.opt['path']['visualization'], img_name, f'{img_name}_{current_iter}.png')
-    else:
-        suffix = model.opt['val'].get('suffix')
-        if suffix:
-            save_img_path = osp.join(model.opt['path']['visualization'], dataset_name, f'{img_name}_{suffix}.png')
-        else:
-            save_img_path = osp.join(
-                model.opt['path']['visualization'], dataset_name, f'{img_name}_{model.opt["name"]}.png')
-    imwrite(sr_img, save_img_path)
+    imwrite(sr_img, _get_save_image_path(model, dataset_name, img_name, current_iter))
 
 
 def distributed_validation(model, dataloader, current_iter, tb_logger, save_img):
@@ -83,6 +86,16 @@ def distributed_validation(model, dataloader, current_iter, tb_logger, save_img)
 
     for val_data in dataloader:
         img_name = osp.splitext(osp.basename(val_data['lq_path'][0]))[0]
+        if save_img and model.opt['val'].get('skip_existing', False):
+            save_img_path = _get_save_image_path(model, dataset_name, img_name, current_iter)
+            if osp.exists(save_img_path):
+                logger = get_root_logger(logger_name='basicsr')
+                logger.info(f'Skip {img_name}: output already exists at {save_img_path}')
+                if use_pbar:
+                    pbar.update(1)
+                    pbar.set_description(f'Skip {img_name}')
+                continue
+
         model.feed_data(val_data)
         _run_model_inference(model)
 
@@ -134,9 +147,29 @@ def distributed_validation(model, dataloader, current_iter, tb_logger, save_img)
         model._log_validation_metric_values(current_iter, dataset_name, tb_logger)
 
 
+def _parse_inference_args():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        '-o', '--output', dest='output_dir',
+        help='Directory used as the visualization output root. Defaults to BasicSR results path.')
+    parser.add_argument(
+        '--skip-existing', action='store_true',
+        help='Skip an image when its target output file already exists.')
+    args, remaining = parser.parse_known_args()
+    sys.argv = [sys.argv[0]] + remaining
+    return args
+
+
 def inference_pipeline(root_path):
+    inference_args = _parse_inference_args()
+
     # parse options, set distributed setting, set random seed
     opt, _ = parse_options(root_path, is_train=False)
+
+    if inference_args.output_dir:
+        opt['path']['visualization'] = osp.abspath(osp.expanduser(inference_args.output_dir))
+    if inference_args.skip_existing:
+        opt['val']['skip_existing'] = True
 
     torch.backends.cudnn.benchmark = True
 
@@ -149,6 +182,8 @@ def inference_pipeline(root_path):
         logger.info(get_env_info())
         logger.info(dict2str(opt))
         logger.info(f'Inference world size: {world_size}')
+        logger.info(f"Inference output root: {opt['path']['visualization']}")
+        logger.info(f"Skip existing outputs: {opt['val'].get('skip_existing', False)}")
 
     # create test dataset shards and dataloaders
     test_loaders = []
